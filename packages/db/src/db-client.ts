@@ -455,10 +455,7 @@ export class DbClient {
       // caused by opening a second collection on the same DbClient.
       const tableFn = () => this.dexie.table(name) as Table<Document<T>>;
       const seqFn = () => this.dexie.table(SEQ_STORE) as Table<SequenceRecord>;
-      this.collections.set(
-        cacheKey,
-        new CollectionClient<T>(tableFn, name, seqFn, options)
-      );
+      this.collections.set(cacheKey, new CollectionClient<T>(tableFn, name, seqFn, options));
     }
     return this.collections.get(cacheKey) as CollectionClient<T>;
   }
