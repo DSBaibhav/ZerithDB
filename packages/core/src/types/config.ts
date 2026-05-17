@@ -1,3 +1,5 @@
+import type { EphemeralConfig } from "./sync.js";
+
 export interface SyncConfig {
   /**
    * WebSocket URL of the ZerithDB signaling server.
@@ -33,6 +35,12 @@ export interface SyncConfig {
    * @default "auto"
    */
   transport?: "auto" | "websocket" | "polling";
+
+  /**
+   * Configuration for the {@link EphemeralStateManager}.
+   * Controls broadcast throttling and stale-peer cleanup timing.
+   */
+  ephemeral?: EphemeralConfig;
 }
 
 export interface AuthConfig {
