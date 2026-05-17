@@ -6,20 +6,86 @@ import type {
   QueryFilter,
   InsertResult,
   UpdateSpec,
+  CollectionOptions,
+  DocumentId,
 } from "zerithdb-core";
 import { ZerithDBError, ErrorCode } from "zerithdb-core";
 import { wrapIDBOperation } from "./internal/wrap-idb-operation.js";
 import type { BackupExportOptions, BackupSnapshot } from "./backup.js";
+
+// ---------------------------------------------------------------------------
+// Internal sequence-counter document shape (stored in __zerithdb_seq store)
+// ---------------------------------------------------------------------------
+
+interface SequenceRecord {
+  /** collection name used as the primary key */
+  _collectionName: string;
+  /** last value that was handed out */
+  _lastId: number;
+}
+
+const SEQ_STORE = "__zerithdb_seq";
 
 /**
  * A handle to a single named collection within the ZerithDB local database.
  * All operations are async and backed by IndexedDB.
  */
 export class CollectionClient<T extends Record<string, any> = Record<string, any>> {
+  private readonly idStrategy: "uuid" | "autoincrement";
+
   constructor(
-    private readonly table: Table<Document<T>>,
-    private readonly collectionName: string
-  ) {}
+    private readonly tableFn: () => Table<Document<T>>,
+    private readonly collectionName: string,
+    private readonly seqTableFn: () => Table<SequenceRecord>,
+    options: CollectionOptions = {}
+  ) {
+    this.idStrategy = options.idStrategy ?? "uuid";
+  }
+
+  /** Always returns the current live Dexie table reference. */
+  private get table(): Table<Document<T>> {
+    return this.tableFn();
+  }
+
+  /** Always returns the current live sequence-store reference. */
+  private get seqTable(): Table<SequenceRecord> {
+    return this.seqTableFn();
+  }
+
+  // -------------------------------------------------------------------------
+  // Private helpers
+  // -------------------------------------------------------------------------
+
+  /**
+   * Atomically fetch-and-increment the integer sequence for this collection.
+   *
+   * The counter is stored in a dedicated `__zerithdb_seq` table so we never
+   * have to scan the actual collection to find `MAX(_id)`.
+   */
+  private async _nextIntegerId(): Promise<number> {
+    return wrapIDBOperation(
+      ErrorCode.DB_WRITE_FAILED,
+      `Failed to increment auto-increment sequence for "${this.collectionName}"`,
+      async () => {
+        const existing = await this.seqTable.get(this.collectionName);
+        const nextId = (existing?._lastId ?? 0) + 1;
+        await this.seqTable.put({ _collectionName: this.collectionName, _lastId: nextId });
+        return nextId;
+      }
+    );
+  }
+
+  /** Generate the next `_id` according to the configured strategy. */
+  private async _generateId(): Promise<DocumentId> {
+    if (this.idStrategy === "autoincrement") {
+      return this._nextIntegerId();
+    }
+    return uuidv7();
+  }
+
+  // -------------------------------------------------------------------------
+  // Public API
+  // -------------------------------------------------------------------------
 
   /**
    * Subscribe to changes in the collection.
@@ -40,10 +106,14 @@ export class CollectionClient<T extends Record<string, any> = Record<string, any
   /**
    * Insert a new document into the collection.
    * Automatically assigns `_id`, `_createdAt`, and `_updatedAt`.
+   *
+   * When `idStrategy` is `"autoincrement"`, `_id` will be a sequential integer
+   * starting at `1`. When `idStrategy` is `"uuid"` (default), `_id` is a
+   * UUID v7 string.
    */
   async insert(document: T): Promise<InsertResult> {
     const now = Date.now();
-    const id = uuidv7();
+    const id = await this._generateId();
     const doc: Document<T> = {
       ...document,
       _id: id,
@@ -66,9 +136,16 @@ export class CollectionClient<T extends Record<string, any> = Record<string, any
    */
   async insertMany(documents: T[]): Promise<InsertResult[]> {
     const now = Date.now();
-    const docs = documents.map((doc) => ({
+
+    // Generate all IDs up-front so each call to _generateId() runs in order
+    const ids: DocumentId[] = [];
+    for (let i = 0; i < documents.length; i++) {
+      ids.push(await this._generateId());
+    }
+
+    const docs = documents.map((doc, i) => ({
       ...doc,
-      _id: uuidv7(),
+      _id: ids[i]!,
       _createdAt: now,
       _updatedAt: now,
     })) as Document<T>[];
@@ -106,12 +183,13 @@ export class CollectionClient<T extends Record<string, any> = Record<string, any
 
   /**
    * Find a single document by its `_id`.
+   * Accepts both UUID strings and integer IDs.
    */
-  async findById(id: string): Promise<Document<T> | undefined> {
+  async findById(id: DocumentId): Promise<Document<T> | undefined> {
     return wrapIDBOperation(
       ErrorCode.DB_READ_FAILED,
       `Failed to get document "${id}" from "${this.collectionName}"`,
-      () => this.table.get(id)
+      () => this.table.get(id as string)
     );
   }
 
@@ -142,7 +220,7 @@ export class CollectionClient<T extends Record<string, any> = Record<string, any
       `Failed to delete documents from "${this.collectionName}"`,
       async () => {
         const matches = await this.find(filter);
-        await this.table.bulkDelete(matches.map((d) => d._id));
+        await this.table.bulkDelete(matches.map((d) => d._id as string));
         return matches.length;
       }
     );
@@ -150,12 +228,20 @@ export class CollectionClient<T extends Record<string, any> = Record<string, any
 
   /**
    * Delete every document in the collection.
+   * The auto-increment counter is also reset to `0` so the next insert
+   * starts from `1` again.
    */
   async clearAll(): Promise<void> {
     return wrapIDBOperation(
       ErrorCode.DB_DELETE_FAILED,
       `Failed to clear collection "${this.collectionName}"`,
-      () => this.table.clear()
+      async () => {
+        await this.table.clear();
+        // Reset the integer sequence so IDs restart from 1 after a clear
+        if (this.idStrategy === "autoincrement") {
+          await this.seqTable.delete(this.collectionName);
+        }
+      }
     );
   }
 
@@ -171,6 +257,22 @@ export class CollectionClient<T extends Record<string, any> = Record<string, any
     const docs = await this.find(filter);
     return docs.length;
   }
+
+  /**
+   * Returns the current value of the auto-increment counter for this
+   * collection (i.e. the `_id` of the most recently inserted document).
+   * Returns `0` if no documents have been inserted yet.
+   *
+   * Only meaningful when `idStrategy` is `"autoincrement"`.
+   */
+  async currentSequenceValue(): Promise<number> {
+    const record = await this.seqTable.get(this.collectionName);
+    return record?._lastId ?? 0;
+  }
+
+  // -------------------------------------------------------------------------
+  // Private implementation helpers
+  // -------------------------------------------------------------------------
 
   private applyUpdateSpec(doc: Document<T>, spec: UpdateSpec<T>, updatedAt: number): Document<T> {
     const next = {
@@ -229,6 +331,10 @@ export class CollectionClient<T extends Record<string, any> = Record<string, any
   }
 }
 
+// ---------------------------------------------------------------------------
+// Internal Dexie subclass
+// ---------------------------------------------------------------------------
+
 /**
  * Internal Dexie subclass that manages dynamic collection creation.
  * Collections are added lazily via schema version upgrades.
@@ -237,9 +343,20 @@ class ZerithDBDexie extends Dexie {
   private readonly tableMap = new Map<string, Table>();
   private _currentSchema: Record<string, string> = {};
   private _pendingVersion = 0;
+  private _seqStoreProvisioned = false;
 
   constructor(appId: string) {
     super(`zerithdb_${appId}`);
+  }
+
+  /**
+   * Ensure the sequence store exists (idempotent).
+   * Called lazily the first time `ensureCollection` runs.
+   */
+  private ensureSeqStore(): void {
+    if (this._seqStoreProvisioned) return;
+    this._seqStoreProvisioned = true;
+    this._currentSchema[SEQ_STORE] = "_collectionName";
   }
 
   /**
@@ -250,6 +367,8 @@ class ZerithDBDexie extends Dexie {
    * @returns The Dexie {@link Table} handle for the collection
    */
   ensureCollection(name: string): Table {
+    this.ensureSeqStore();
+
     if (!this.tableMap.has(name)) {
       this._currentSchema[name] = "_id, _createdAt, _updatedAt";
 
@@ -267,7 +386,24 @@ class ZerithDBDexie extends Dexie {
     // biome-ignore lint: map guarantees this is defined
     return this.tableMap.get(name)!;
   }
+
+  /** Returns the sequence Table (always provisioned alongside collections). */
+  seqTable(): Table<SequenceRecord> {
+    // If not yet provisioned, set it up now
+    if (!this._seqStoreProvisioned) {
+      this.ensureSeqStore();
+      const nextVersion = Math.max(this.verno, this._pendingVersion) + 1;
+      this._pendingVersion = nextVersion;
+      if (this.isOpen()) this.close();
+      this.version(nextVersion).stores(this._currentSchema);
+    }
+    return this.table(SEQ_STORE) as Table<SequenceRecord>;
+  }
 }
+
+// ---------------------------------------------------------------------------
+// DbClient
+// ---------------------------------------------------------------------------
 
 /**
  * Internal database client. Wraps Dexie and manages collection instances.
@@ -284,19 +420,56 @@ export class DbClient {
     this.dexie = new ZerithDBDexie(config.appId);
   }
 
-  collection<T extends Record<string, any>>(name: string): CollectionClient<T> {
-    if (!this.collections.has(name)) {
-      const table = this.dexie.ensureCollection(name);
-      this.collections.set(name, new CollectionClient<T>(table as Table<Document<T>>, name));
+  /**
+   * Open a collection handle.
+   *
+   * @param name    - Collection name
+   * @param options - Optional configuration, e.g. `{ idStrategy: "autoincrement" }`
+   *
+   * @example UUID v7 IDs (default)
+   * ```ts
+   * const users = db.collection("users");
+   * await users.insert({ name: "Alice" }); // _id: "01973c6e-..."
+   * ```
+   *
+   * @example Auto-incrementing integer IDs
+   * ```ts
+   * const posts = db.collection("posts", { idStrategy: "autoincrement" });
+   * await posts.insert({ title: "Hello" }); // _id: 1
+   * await posts.insert({ title: "World" }); // _id: 2
+   * ```
+   */
+  collection<T extends Record<string, any>>(
+    name: string,
+    options: CollectionOptions = {}
+  ): CollectionClient<T> {
+    // Cache key includes the strategy so callers can't accidentally mix strategies
+    // on the same collection name in the same session.
+    const cacheKey = `${name}:${options.idStrategy ?? "uuid"}`;
+
+    if (!this.collections.has(cacheKey)) {
+      // Ensure the collection schema is registered now (idempotent after first call)
+      this.dexie.ensureCollection(name);
+      // Pass factory functions so CollectionClient always resolves the
+      // live Dexie Table reference — even after a schema-version upgrade
+      // caused by opening a second collection on the same DbClient.
+      const tableFn = () => this.dexie.table(name) as Table<Document<T>>;
+      const seqFn = () => this.dexie.table(SEQ_STORE) as Table<SequenceRecord>;
+      this.collections.set(
+        cacheKey,
+        new CollectionClient<T>(tableFn, name, seqFn, options)
+      );
     }
-    return this.collections.get(name) as CollectionClient<T>;
+    return this.collections.get(cacheKey) as CollectionClient<T>;
   }
 
   async getMemoryStats(): Promise<{ recordCount: number; collections: Record<string, number> }> {
     const collections: Record<string, number> = {};
     let recordCount = 0;
 
-    for (const [name, client] of this.collections) {
+    for (const [key, client] of this.collections) {
+      // Strip the ":uuid" / ":autoincrement" suffix for the stat label
+      const name = key.split(":")[0]!;
       const count = await client.count();
       collections[name] = count;
       recordCount += count;
@@ -309,14 +482,16 @@ export class DbClient {
    * Returns names of collections that have been opened in this session.
    */
   collectionNames(): string[] {
-    return Array.from(this.collections.keys());
+    // Deduplicate in case same collection opened with different strategies
+    return [...new Set(Array.from(this.collections.keys()).map((k) => k.split(":")[0]!))];
   }
 
   /**
    * Returns names of all collections currently stored in IndexedDB.
+   * Excludes the internal sequence store.
    */
   allCollectionNames(): string[] {
-    return this.dexie.tables.map((t) => t.name);
+    return this.dexie.tables.map((t) => t.name).filter((n) => n !== SEQ_STORE);
   }
 
   /**
@@ -345,6 +520,7 @@ export class DbClient {
       }
     );
   }
+
   async dispose(): Promise<void> {
     this.dexie.close();
   }
