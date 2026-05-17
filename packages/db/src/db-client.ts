@@ -326,6 +326,12 @@ export class CollectionClient<T extends Record<string, any> = Record<string, any
         return false;
       if ("$nin" in conditions && (conditions["$nin"] as unknown[]).includes(fieldValue))
         return false;
+      if ("$exists" in conditions) {
+        const exists = fieldValue !== undefined && fieldValue !== null;
+        if (conditions["$exists"] && !exists) return false;
+        if (!conditions["$exists"] && exists) return false;
+        continue;
+      }
       if ("$regex" in conditions) {
         if (typeof fieldValue !== "string") return false;
         const pattern = conditions["$regex"] as RegExp | string;
