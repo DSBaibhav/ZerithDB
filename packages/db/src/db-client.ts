@@ -326,6 +326,14 @@ export class CollectionClient<T extends Record<string, any> = Record<string, any
         return false;
       if ("$nin" in conditions && (conditions["$nin"] as unknown[]).includes(fieldValue))
         return false;
+      if ("$regex" in conditions) {
+        if (typeof fieldValue !== "string") return false;
+        const pattern = conditions["$regex"] as RegExp | string;
+        const regex = pattern instanceof RegExp ? pattern : new RegExp(pattern);
+        // Reset lastIndex for stateful (global/sticky) regexes
+        if (regex.global || regex.sticky) regex.lastIndex = 0;
+        if (!regex.test(fieldValue)) return false;
+      }
     }
     return true;
   }

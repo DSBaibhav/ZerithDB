@@ -49,16 +49,26 @@ export interface CollectionOptions {
  */
 export type QueryFilter<T extends Record<string, any>> = {
   [K in keyof T]?:
-    | T[K]
-    | { $eq: T[K] }
-    | { $ne: T[K] }
-    | { $gt: T[K] }
-    | { $gte: T[K] }
-    | { $lt: T[K] }
-    | { $lte: T[K] }
-    | { $in: T[K][] }
-    | { $nin: T[K][] }
-    | { $regex: RegExp | string };
+  | T[K]
+  | { $eq: T[K] }
+  | { $ne: T[K] }
+  | { $gt: T[K] }
+  | { $gte: T[K] }
+  | { $lt: T[K] }
+  | { $lte: T[K] }
+  | { $in: T[K][] }
+  | { $nin: T[K][] }
+  | { $regex: RegExp | string }
+} & {
+  _id?: DocumentId | { $eq: DocumentId } | { $ne: DocumentId } | { $gt: DocumentId }
+  | { $gte: DocumentId } | { $lt: DocumentId } | { $lte: DocumentId }
+  | { $in: DocumentId[] } | { $nin: DocumentId[] };
+  _createdAt?: number | { $eq: number } | { $ne: number } | { $gt: number }
+  | { $gte: number } | { $lt: number } | { $lte: number }
+  | { $in: number[] } | { $nin: number[] };
+  _updatedAt?: number | { $eq: number } | { $ne: number } | { $gt: number }
+  | { $gte: number } | { $lt: number } | { $lte: number }
+  | { $in: number[] } | { $nin: number[] };
 };
 
 /** Partial update spec — only specified fields are modified */
