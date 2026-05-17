@@ -198,6 +198,19 @@ export class CollectionClient<T extends Record<string, any> = Record<string, any
    * Returns the number of updated documents.
    */
   async update(filter: QueryFilter<T>, spec: UpdateSpec<T>): Promise<number> {
+    if (spec === null || spec === undefined) {
+      throw new ZerithDBError(ErrorCode.DB_WRITE_FAILED, "Update spec must not be null or undefined");
+    }
+    if (!spec.$set && !spec.$unset) {
+      throw new ZerithDBError(ErrorCode.DB_WRITE_FAILED, "Update spec must include $set or $unset");
+    }
+    if (
+      spec.$set !== undefined && Object.keys(spec.$set).length === 0 &&
+      spec.$unset !== undefined && Object.keys(spec.$unset).length === 0
+    ) {
+      throw new ZerithDBError(ErrorCode.DB_WRITE_FAILED, "Update spec $set and $unset must not both be empty");
+    }
+
     return wrapIDBOperation(
       ErrorCode.DB_WRITE_FAILED,
       `Failed to update documents in "${this.collectionName}"`,
@@ -209,7 +222,6 @@ export class CollectionClient<T extends Record<string, any> = Record<string, any
       }
     );
   }
-
   /**
    * Delete documents matching a filter.
    * Returns the number of deleted documents.
