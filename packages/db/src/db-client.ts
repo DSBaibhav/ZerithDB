@@ -481,6 +481,9 @@ export class DbClient {
   ): CollectionClient<T> {
     // Cache key includes the strategy so callers can't accidentally mix strategies
     // on the same collection name in the same session.
+    if (name === null || name === undefined || typeof name !== "string" || name.trim() === "") {
+      throw new ZerithDBError(ErrorCode.DB_INIT_FAILED, `Invalid collection name: "${String(name)}"`);
+    }
     const cacheKey = `${name}:${options.idStrategy ?? "uuid"}`;
 
     if (!this.collections.has(cacheKey)) {
