@@ -1,11 +1,5 @@
 import SimplePeer from "simple-peer";
-import type {
-  ZerithDBConfig,
-  PeerId,
-  PeerInfo,
-  MediaStreamMetadata,
-  MediaStreamMetadataInput,
-} from "zerithdb-core";
+import type { ZerithDBConfig, PeerId, PeerInfo } from "zerithdb-core";
 import { EventEmitter, ZerithDBError, ErrorCode } from "zerithdb-core";
 import type { AuthManager } from "zerithdb-auth";
 import type { SignalingTransport } from "./signaling-transport.js";
@@ -30,8 +24,6 @@ type NetworkEvents = {
   message: { type: string; payload: Uint8Array | string; from: PeerId };
   error: { peerId: PeerId; error: Error };
   "transport:downgrade": { from: "websocket"; to: "polling"; reason: string };
-  "media:stream": { peerId: PeerId; stream: MediaStream; metadata?: MediaStreamMetadata };
-  "media:stream:removed": { peerId: PeerId; streamId: string };
 };
 
 interface SignalingMessage {
@@ -78,11 +70,6 @@ export class NetworkManager extends EventEmitter<NetworkEvents> {
   /** The transport type currently in use, or null if not connected */
   get transportType(): "websocket" | "polling" | null {
     return this.activeTransportType;
-  }
-
-  /** The local peer's unique identifier within the current P2P session. */
-  get peerId(): PeerId {
-    return this.localPeerId;
   }
 
   /**
@@ -219,62 +206,6 @@ export class NetworkManager extends EventEmitter<NetworkEvents> {
       bufferedBytes,
       peers,
     };
-  }
-
-  // ─── Media stream API (WebRTC media tracks) ───────────────────────────────
-
-  /**
-   * Publish a local MediaStream to all connected peers.
-   * Returns the normalised metadata record for this stream.
-   *
-   * @see {@link VideoConferenceManager.publishStream}
-   */
-  addMediaStream(
-    stream: MediaStream,
-    metadata: MediaStreamMetadataInput = {}
-  ): MediaStreamMetadata {
-    return {
-      streamId: stream.id,
-      label: typeof metadata.label === "string" ? metadata.label : undefined,
-      audioMuted: false,
-      videoMuted: false,
-      tracks: stream
-        .getTracks()
-        .map((t) => ({ kind: t.kind as "audio" | "video", muted: !t.enabled })),
-      ...metadata,
-    };
-  }
-
-  /**
-   * Stop sending a local MediaStream to peers.
-   */
-  removeMediaStream(_streamOrId: MediaStream | string): void {
-    // no-op — full implementation tracked separately
-  }
-
-  /**
-   * Update metadata for a stream that has already been published.
-   * Returns the updated metadata, or `undefined` if the stream is not found.
-   */
-  updateMediaStreamMetadata(
-    _streamId: string,
-    _metadata: MediaStreamMetadataInput
-  ): MediaStreamMetadata | undefined {
-    return undefined;
-  }
-
-  /**
-   * Enable or disable audio/video tracks in a published stream.
-   */
-  setMediaTrackEnabled(_kind: "audio" | "video", _enabled: boolean, _streamId?: string): void {
-    // no-op — full implementation tracked separately
-  }
-
-  /**
-   * Returns metadata for all locally published streams.
-   */
-  getLocalMediaStreamMetadata(): MediaStreamMetadata[] {
-    return [];
   }
 
   async dispose(): Promise<void> {

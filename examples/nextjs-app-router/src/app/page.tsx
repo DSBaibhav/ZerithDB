@@ -120,7 +120,7 @@ export default function Home() {
               >
                 <span className="text-lg">{todo.text}</span>
                 <button
-                  onClick={() => deleteTodo(String(todo._id))}
+                  onClick={() => deleteTodo(todo._id)}
                   className="text-gray-400 hover:text-red-500 transition-colors p-1"
                 >
                   <Trash2 size={18} />
