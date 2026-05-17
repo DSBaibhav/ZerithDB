@@ -120,6 +120,9 @@ export class CollectionClient<T extends Record<string, any> = Record<string, any
       _createdAt: now,
       _updatedAt: now,
     };
+    if (document === null || document === undefined) {
+      throw new ZerithDBError(ErrorCode.DB_WRITE_FAILED, "Document must not be null or undefined");
+    }
 
     return wrapIDBOperation(
       ErrorCode.DB_WRITE_FAILED,
@@ -149,7 +152,12 @@ export class CollectionClient<T extends Record<string, any> = Record<string, any
       _createdAt: now,
       _updatedAt: now,
     })) as Document<T>[];
-
+    if (!documents || documents.length === 0) {
+      throw new ZerithDBError(ErrorCode.DB_WRITE_FAILED, "insertMany requires a non-empty array");
+    }
+    if (documents.some((d) => d === null || d === undefined)) {
+      throw new ZerithDBError(ErrorCode.DB_WRITE_FAILED, "insertMany array must not contain null or undefined");
+    }
     return wrapIDBOperation(
       ErrorCode.DB_WRITE_FAILED,
       `Failed to bulk insert into collection "${this.collectionName}"`,
