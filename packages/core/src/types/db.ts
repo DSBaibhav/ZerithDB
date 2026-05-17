@@ -1,5 +1,9 @@
-/** Unique identifier for a document — UUID v7 string */
-export type DocumentId = string;
+/**
+ * Unique identifier for a document.
+ * - UUID v7 string (default — globally unique, sortable by insertion time)
+ * - Auto-incrementing integer (opt-in via `{ idStrategy: "autoincrement" }`)
+ */
+export type DocumentId = string | number;
 
 /** Name of a collection within ZerithDB */
 export type CollectionName = string;
@@ -12,6 +16,32 @@ export type Document<T extends Record<string, any> = Record<string, any>> = T & 
   /** Last-updated-at timestamp in Unix milliseconds */
   _updatedAt: number;
 };
+
+/**
+ * Options passed when opening a collection handle.
+ *
+ * @example UUID v7 (default)
+ * ```ts
+ * db.collection("users")
+ * ```
+ *
+ * @example Auto-incrementing integer IDs
+ * ```ts
+ * db.collection("users", { idStrategy: "autoincrement" })
+ * ```
+ */
+export interface CollectionOptions {
+  /**
+   * Controls how `_id` values are generated for new documents.
+   *
+   * - `"uuid"` *(default)* — UUID v7, globally unique and time-sortable.
+   *   Safe for distributed / P2P workloads.
+   * - `"autoincrement"` — Sequential integers starting at `1`.
+   *   Familiar for SQL-style workflows. **Not safe for P2P sync** — IDs
+   *   will collide when two peers insert independently.
+   */
+  idStrategy?: "uuid" | "autoincrement";
+}
 
 /**
  * MongoDB-style query filter operators.

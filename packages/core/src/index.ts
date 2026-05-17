@@ -16,6 +16,7 @@ export type {
   Document,
   DocumentId,
   CollectionName,
+  CollectionOptions,
   QueryFilter,
   UpdateSpec,
   InsertResult,
