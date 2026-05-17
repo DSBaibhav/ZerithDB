@@ -24,6 +24,7 @@ export type {
 } from "./types/db.js";
 export type { PeerId, PeerInfo, RoomId, NetworkMessage } from "./types/network.js";
 export type { Identity, PublicKey, Signature } from "./types/auth.js";
+
 export type {
   SyncUpdate,
   SyncState,
@@ -37,3 +38,11 @@ export type {
   ActiveSpeakerState,
   VideoParticipantState,
 } from "./types/sync.js";
+
+export type {
+  GraphNode,
+  GraphEdge,
+  GraphNodeId,
+  EdgeLabel,
+  GraphTraversalResult,
+} from "./types/graph.js";
