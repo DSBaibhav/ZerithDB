@@ -79,7 +79,8 @@ type QueryFilterValue<T> =
   | { $in: T[] }
   | { $nin: T[] }
   | { $exists: boolean }
-  | RegexFilter;
+  | { $regex: RegExp | string };
+  | { $exists: boolean };
 
 /**
  * Query filters can target both user-defined fields and ZerithDB system fields

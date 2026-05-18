@@ -79,6 +79,10 @@ export interface SyncPlugin {
   id: string;
   version: number;
   /**
+   * Optional semantic conflict resolver for text-heavy collections.
+   */
+  conflictResolver?: ConflictResolver;
+  /**
    * Hook to transform/resolve conflicts before applying a remote update
    */
   onBeforeApplyUpdate?: (

@@ -1,9 +1,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // zerithdb-core — Public API
 // ─────────────────────────────────────────────────────────────────────────────
-
 export { EventEmitter } from "./internal/event-emitter.js";
-export { ZerithDBError, ErrorCode } from "zerithdb-errors";
+export {
+  ZerithDBError,
+  ZerithValidationError,
+  ErrorCode,
+} from "./errors.js";
 export { Logger } from "./internal/logger.js";
 export type {
   ZerithDBConfig,
@@ -11,6 +14,7 @@ export type {
   AuthConfig,
   NetworkConfig,
   DebugConfig,
+  ConflictResolverConfig,
 } from "./types/config.js";
 export type {
   Document,
@@ -31,6 +35,7 @@ export type {
   SyncState,
   AwarenessState,
   SyncPlugin,
+  SyncProtocol,
   EphemeralPeerState,
   EphemeralConfig,
   MediaStreamMetadata,
@@ -47,3 +52,15 @@ export type {
   EdgeLabel,
   GraphTraversalResult,
 } from "./types/graph.js";
+
+export {
+  PeerIdSchema,
+  SyncUpdateMessageSchema,
+  AwarenessMessageSchema,
+  PingMessageSchema,
+  PongMessageSchema,
+  PeerDataMessageSchema,
+  IncomingPeerDataMessageSchema,
+} from "./schemas/messages.js";
+
+export type { PeerDataMessage, IncomingPeerDataMessage } from "./schemas/messages.js";

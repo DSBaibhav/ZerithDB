@@ -6,7 +6,7 @@ import type {
   MediaStreamMetadata,
   MediaStreamMetadataInput,
 } from "zerithdb-core";
-import { EventEmitter, ZerithDBError, ErrorCode } from "zerithdb-core";
+import { EventEmitter, ZerithDBError, ErrorCode, PeerDataMessageSchema } from "zerithdb-core";
 import type { AuthManager } from "zerithdb-auth";
 import type { SignalingTransport } from "./signaling-transport.js";
 import { WebSocketTransport } from "./transports/websocket-transport.js";
@@ -35,7 +35,7 @@ type NetworkEvents = {
 };
 
 interface SignalingMessage {
-  type: "offer" | "answer" | "ice-candidate" | "peer-list";
+  type: "offer" | "answer" | "ice-candidate" | "peer-list" | "announcement";
   from: string;
   to?: string;
   payload: unknown;
@@ -333,10 +333,17 @@ export class NetworkManager extends EventEmitter<NetworkEvents> {
   // ─── Private — Transport setup ────────────────────────────────────────────
 
   private async connectWebSocket(signalingUrl: string, roomId: string): Promise<void> {
-    const url = `${signalingUrl}?room=${encodeURIComponent(roomId)}&peer=${this.localPeerId}`;
+    const proofOfWork = await this.createProofOfWork(signalingUrl, roomId);
+    const url = new URL(signalingUrl);
+    url.searchParams.set("room", roomId);
+    url.searchParams.set("peer", this.localPeerId);
+    if (proofOfWork !== null) {
+      url.searchParams.set("powChallenge", proofOfWork.challenge);
+      url.searchParams.set("powNonce", proofOfWork.nonce);
+    }
 
     const wsTransport = new WebSocketTransport();
-    await wsTransport.connect(url, 5000);
+    await wsTransport.connect(url.toString(), 5000);
 
     this.attachTransport(wsTransport, roomId);
     this.activeTransportType = "websocket";
@@ -345,9 +352,10 @@ export class NetworkManager extends EventEmitter<NetworkEvents> {
 
   private async connectPolling(signalingUrl: string, roomId: string): Promise<void> {
     const httpUrl = this.wsUrlToHttp(signalingUrl);
+    const proofOfWork = await this.createProofOfWork(signalingUrl, roomId);
 
     const pollTransport = new PollingTransport(httpUrl);
-    await pollTransport.connect(roomId, this.localPeerId);
+    await pollTransport.connect(roomId, this.localPeerId, proofOfWork);
 
     this.attachTransport(pollTransport, roomId);
     this.activeTransportType = "polling";
@@ -390,6 +398,11 @@ export class NetworkManager extends EventEmitter<NetworkEvents> {
 
   private handleSignalingMessage(msg: SignalingMessage): void {
     switch (msg.type) {
+      case "announcement":
+        console.warn(`[ZerithDB] System Announcement: ${msg.payload}`);
+        this.emit("announcement", msg.payload as string);
+        break;
+
       case "peer-list":
         for (const peerId of msg.payload as PeerId[]) {
           if (peerId !== this.localPeerId) {
