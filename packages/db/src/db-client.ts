@@ -186,7 +186,29 @@ export class CollectionClient<T extends Record<string, any> = Record<string, any
       `Failed to query collection "${this.collectionName}"`,
       async () => {
         const all = await this.table.toArray();
-        return all.filter((doc) => this.matchesFilter(doc, filter));
+        let results = all.filter((doc) => this.matchesFilter(doc, filter));
+
+        if (options.sort) {
+          const { field, order } = options.sort;
+          results.sort((a, b) => {
+            const valA = a[field as keyof typeof a];
+            const valB = b[field as keyof typeof b];
+            if (valA < valB) return order === "desc" ? 1 : -1;
+            if (valA > valB) return order === "desc" ? -1 : 1;
+            return 0;
+          });
+        }
+
+        const skip = options.skip ?? options.offset ?? 0;
+        if (skip > 0) {
+          results = results.slice(skip);
+        }
+
+        if (options.limit !== undefined) {
+          results = results.slice(0, options.limit);
+        }
+
+        return results;
       }
     );
   }
@@ -357,7 +379,19 @@ export class CollectionClient<T extends Record<string, any> = Record<string, any
       if ("$regex" in conditions) {
         if (typeof fieldValue !== "string") return false;
         const pattern = conditions["$regex"] as RegExp | string;
-        const regex = pattern instanceof RegExp ? pattern : new RegExp(pattern);
+        
+        let regex: RegExp;
+        if (pattern instanceof RegExp) {
+          regex = pattern;
+        } else {
+          try {
+            const flags = (conditions as any)["$flags"] ?? (conditions as any)["$options"];
+            regex = new RegExp(pattern, flags);
+          } catch (e) {
+            return false;
+          }
+        }
+        
         // Reset lastIndex for stateful (global/sticky) regexes
         if (regex.global || regex.sticky) regex.lastIndex = 0;
         if (!regex.test(fieldValue)) return false;
