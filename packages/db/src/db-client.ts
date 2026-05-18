@@ -4,6 +4,7 @@ import type {
   ZerithDBConfig,
   Document,
   QueryFilter,
+  QueryOptions,
   InsertResult,
   UpdateSpec,
   CollectionOptions,
@@ -86,6 +87,20 @@ export class CollectionClient<T extends Record<string, any> = Record<string, any
   // -------------------------------------------------------------------------
   // Public API
   // -------------------------------------------------------------------------
+
+  private async checkBiometric(operationDescription: string): Promise<void> {
+    if (this.auth?.biometric?.isBiometricRequiredForDB()) {
+      const authorized = await this.auth.biometric.promptBiometric(
+        `Authorize sensitive database operation: ${operationDescription} in collection "${this.collectionName}"`
+      );
+      if (!authorized) {
+        throw new ZerithDBError(
+          ErrorCode.AUTH_SIGN_FAILED,
+          "Database operation cancelled or biometric authentication failed."
+        );
+      }
+    }
+  }
 
   /**
    * Subscribe to changes in the collection.
@@ -178,7 +193,7 @@ export class CollectionClient<T extends Record<string, any> = Record<string, any
    * const high = await todos.find({ priority: { $gte: 3 } });
    * ```
    */
-  async find(filter: QueryFilter<T> = {}): Promise<Document<T>[]> {
+  async find(filter: QueryFilter<T> = {}, options: QueryOptions<T> = {}): Promise<Document<T>[]> {
     return wrapIDBOperation(
       ErrorCode.DB_READ_FAILED,
       `Failed to query collection "${this.collectionName}"`,
@@ -235,6 +250,7 @@ export class CollectionClient<T extends Record<string, any> = Record<string, any
    * Returns the number of deleted documents.
    */
   async delete(filter: QueryFilter<T>): Promise<number> {
+    await this.checkBiometric("Delete Documents");
     return wrapIDBOperation(
       ErrorCode.DB_DELETE_FAILED,
       `Failed to delete documents from "${this.collectionName}"`,
@@ -252,6 +268,7 @@ export class CollectionClient<T extends Record<string, any> = Record<string, any
    * starts from `1` again.
    */
   async clearAll(): Promise<void> {
+    await this.checkBiometric("Clear Collection");
     return wrapIDBOperation(
       ErrorCode.DB_DELETE_FAILED,
       `Failed to clear collection "${this.collectionName}"`,
@@ -382,8 +399,6 @@ class ZerithDBDexie extends Dexie {
   constructor(appId: string) {
     super(`zerithdb_${appId}`);
   }
-
-
 
   /**
    * Ensure the sequence store exists (idempotent).
@@ -535,6 +550,18 @@ export class DbClient {
    * If options.collections is omitted, it exports ALL collections found in IndexedDB.
    */
   async exportSnapshot(options: BackupExportOptions = {}): Promise<BackupSnapshot> {
+    if (this.auth?.biometric?.isBiometricRequiredForDB()) {
+      const authorized = await this.auth.biometric.promptBiometric(
+        "Authorize sensitive operation: Export full database backup snapshot"
+      );
+      if (!authorized) {
+        throw new ZerithDBError(
+          ErrorCode.AUTH_SIGN_FAILED,
+          "Database export cancelled or biometric authentication failed."
+        );
+      }
+    }
+
     return wrapIDBOperation(
       ErrorCode.DB_READ_FAILED,
       "Failed to export local backup snapshot",

@@ -18,6 +18,7 @@ export type {
   CollectionName,
   CollectionOptions,
   QueryFilter,
+  QueryOptions,
   UpdateSpec,
   InsertResult,
   FindResult,
