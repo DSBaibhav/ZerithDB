@@ -23,12 +23,12 @@ export type Document<T extends Record<string, any> = Record<string, any>> = T & 
 type RegexFilter =
   | { $regex: RegExp | string }
   | {
-      $regex: RegExp | string;
-      /** Regex flags (for example: "i", "gm") */
-      $flags?: string;
-      /** Alias for $flags for MongoDB-like ergonomics */
-      $options?: string;
-    };
+    $regex: RegExp | string;
+    /** Regex flags (for example: "i", "gm") */
+    $flags?: string;
+    /** Alias for $flags for MongoDB-like ergonomics */
+    $options?: string;
+  };
 
 /**
  * Options passed when opening a collection handle.
@@ -97,6 +97,8 @@ export type QueryFilter<T extends Record<string, any>> = {
   | { $in: T[K][] }
   | { $nin: T[K][] }
   | { $regex: RegExp | string }
+  | { $regex: string; $flags: string }
+  | { $regex: string; $options: string }
 } & {
   _id?: DocumentId | { $eq: DocumentId } | { $ne: DocumentId } | { $gt: DocumentId }
   | { $gte: DocumentId } | { $lt: DocumentId } | { $lte: DocumentId }

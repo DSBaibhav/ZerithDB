@@ -88,19 +88,6 @@ export class CollectionClient<T extends Record<string, any> = Record<string, any
   // Public API
   // -------------------------------------------------------------------------
 
-  private async checkBiometric(operationDescription: string): Promise<void> {
-    if (this.auth?.biometric?.isBiometricRequiredForDB()) {
-      const authorized = await this.auth.biometric.promptBiometric(
-        `Authorize sensitive database operation: ${operationDescription} in collection "${this.collectionName}"`
-      );
-      if (!authorized) {
-        throw new ZerithDBError(
-          ErrorCode.AUTH_SIGN_FAILED,
-          "Database operation cancelled or biometric authentication failed."
-        );
-      }
-    }
-  }
 
   /**
    * Subscribe to changes in the collection.
@@ -127,6 +114,9 @@ export class CollectionClient<T extends Record<string, any> = Record<string, any
    * UUID v7 string.
    */
   async insert(document: T): Promise<InsertResult> {
+    if ((document as any) === null || (document as any) === undefined) {
+      throw new ZerithDBError(ErrorCode.DB_WRITE_FAILED, "Document must not be null or undefined");
+    }
     const now = Date.now();
     const id = await this._generateId();
     const doc: Document<T> = {
@@ -135,9 +125,6 @@ export class CollectionClient<T extends Record<string, any> = Record<string, any
       _createdAt: now,
       _updatedAt: now,
     };
-    if (document === null || document === undefined) {
-      throw new ZerithDBError(ErrorCode.DB_WRITE_FAILED, "Document must not be null or undefined");
-    }
 
     return wrapIDBOperation(
       ErrorCode.DB_WRITE_FAILED,
@@ -170,7 +157,7 @@ export class CollectionClient<T extends Record<string, any> = Record<string, any
     if (!documents || documents.length === 0) {
       throw new ZerithDBError(ErrorCode.DB_WRITE_FAILED, "insertMany requires a non-empty array");
     }
-    if (documents.some((d) => d === null || d === undefined)) {
+    if (documents.some((d) => (d as any) === null || (d as any) === undefined)) {
       throw new ZerithDBError(ErrorCode.DB_WRITE_FAILED, "insertMany array must not contain null or undefined");
     }
     return wrapIDBOperation(
@@ -221,7 +208,7 @@ export class CollectionClient<T extends Record<string, any> = Record<string, any
    * Returns the number of updated documents.
    */
   async update(filter: QueryFilter<T>, spec: UpdateSpec<T>): Promise<number> {
-    if (spec === null || spec === undefined) {
+    if ((spec as any) === null || (spec as any) === undefined) {
       throw new ZerithDBError(ErrorCode.DB_WRITE_FAILED, "Update spec must not be null or undefined");
     }
     if (!spec.$set && !spec.$unset) {
@@ -250,7 +237,6 @@ export class CollectionClient<T extends Record<string, any> = Record<string, any
    * Returns the number of deleted documents.
    */
   async delete(filter: QueryFilter<T>): Promise<number> {
-    await this.checkBiometric("Delete Documents");
     return wrapIDBOperation(
       ErrorCode.DB_DELETE_FAILED,
       `Failed to delete documents from "${this.collectionName}"`,
@@ -268,7 +254,6 @@ export class CollectionClient<T extends Record<string, any> = Record<string, any
    * starts from `1` again.
    */
   async clearAll(): Promise<void> {
-    await this.checkBiometric("Clear Collection");
     return wrapIDBOperation(
       ErrorCode.DB_DELETE_FAILED,
       `Failed to clear collection "${this.collectionName}"`,
@@ -550,17 +535,6 @@ export class DbClient {
    * If options.collections is omitted, it exports ALL collections found in IndexedDB.
    */
   async exportSnapshot(options: BackupExportOptions = {}): Promise<BackupSnapshot> {
-    if (this.auth?.biometric?.isBiometricRequiredForDB()) {
-      const authorized = await this.auth.biometric.promptBiometric(
-        "Authorize sensitive operation: Export full database backup snapshot"
-      );
-      if (!authorized) {
-        throw new ZerithDBError(
-          ErrorCode.AUTH_SIGN_FAILED,
-          "Database export cancelled or biometric authentication failed."
-        );
-      }
-    }
 
     return wrapIDBOperation(
       ErrorCode.DB_READ_FAILED,

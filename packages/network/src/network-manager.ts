@@ -165,14 +165,14 @@ export class NetworkManager extends EventEmitter<NetworkEvents> {
    * Broadcast a message to all connected peers.
    */
   broadcast(message: { type: string; payload: string | Uint8Array }): void {
-    this.signAndSendAsync(message, null);
+    void this.signAndSendAsync(message, null);
   }
 
   /**
    * Send a message to a specific peer.
    */
   sendTo(peerId: PeerId, message: { type: string; payload: string | Uint8Array }): void {
-    this.signAndSendAsync(message, peerId);
+    void this.signAndSendAsync(message, peerId);
   }
 
   private async signAndSendAsync(
@@ -540,7 +540,6 @@ export class NetworkManager extends EventEmitter<NetworkEvents> {
         }
       }
 
-      this.handlePeerMessage(remotePeerId, msg);
       this.emit("message", { ...msg, from: remotePeerId });
     } catch (err) {
       // Ignore malformed messages
